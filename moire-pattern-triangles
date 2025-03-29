@@ -1,0 +1,132 @@
+#include <Arduino.h>
+#include <Adafruit_Arcada.h>
+#include <Adafruit_GFX.h>
+#include <math.h>
+
+Adafruit_Arcada arcada;
+
+// ----- Color Definitions -----
+#define COLOR_WHITE 0xFFFF
+#define COLOR_BLACK 0x0000
+
+// ----- Grid Parameters -----
+const int triangleSide = 20; // Side length of each equilateral triangle (in pixels)
+const float triangleHeight = triangleSide * sqrt(3.0) / 2.0; // Height of an equilateral triangle
+
+// ----- Top Grid Transformation Parameters -----
+// These parameters define the center (pivot) for the top grid.
+int topGridBaseX = 160; // Center X (for example, 160 for a 320-pixel wide screen)
+int topGridBaseY = 120; // Center Y (for example, 120 for a 240-pixel tall screen)
+
+// Oscillation (side-to-side) parameters for the top grid:
+const int topOscAmplitude = 20;  // Oscillation amplitude: ±20 pixels horizontal shift
+float topOscPhase = 0.0;           // Oscillation phase (in degrees)
+const float topOscSpeed = 2.0;     // Oscillation speed (degrees per loop)
+
+// Rotation parameters for the top grid:
+float topRotation = 0.0;           // Current rotation angle (in degrees)
+const float topRotationSpeed = 1.0; // Rotation speed (degrees per loop)
+
+// ----- New Parameters: Top Grid Extended Coverage -----
+// These parameters extend the drawing area of the top grid beyond the screen boundaries.
+int topGridExtraWidth = 150;  // Extra width (in pixels) beyond the screen edges
+int topGridExtraHeight = 150; // Extra height (in pixels) beyond the screen edges
+
+// ----- Helper Function: Draw a Centered Equilateral Triangle -----
+// Draws a triangle centered at (cx, cy) with its top vertex pointing upward.
+void drawCenteredTriangle(GFXcanvas16 *canvas, int cx, int cy, int side, uint16_t color) {
+  float h = side * sqrt(3.0) / 2.0;
+  int x1 = cx;
+  int y1 = cy - (int)(2.0 * h / 3.0);  // Top vertex
+  int x2 = cx - side / 2;
+  int y2 = cy + (int)(h / 3.0);         // Bottom left
+  int x3 = cx + side / 2;
+  int y3 = cy + (int)(h / 3.0);         // Bottom right
+  canvas->fillTriangle(x1, y1, x2, y2, x3, y3, color);
+}
+
+// ----- Draw the Static Bottom Grid of Triangles -----
+// This grid remains fixed on the screen.
+void drawStaticTriangleGrid(GFXcanvas16 *canvas, int offsetX, int offsetY, int side, uint16_t color) {
+  int w = canvas->width();
+  int h = canvas->height();
+  
+  for (int y = side / 2; y < h; y += triangleHeight) {
+    for (int x = side / 2; x < w; x += side) {
+      drawCenteredTriangle(canvas, x + offsetX, y + offsetY, side, color);
+    }
+  }
+}
+
+// ----- Draw the Top Grid of Triangles with Centered Rotation and Extended Coverage -----
+// This function rotates each grid point about the pivot (topGridBaseX, topGridBaseY)
+// and then applies a horizontal oscillation. The grid is drawn over an area larger than the screen.
+void drawTopTriangleGrid(GFXcanvas16 *canvas, int baseX, int baseY, int side, float rotationDegrees, int oscOffset, uint16_t color) {
+  int w = canvas->width();
+  int h = canvas->height();
+  float rotationRad = rotationDegrees * PI / 180.0;
+  
+  // Extend the drawing area using the new parameters:
+  int startX = -topGridExtraWidth;
+  int endX   = w + topGridExtraWidth;
+  int startY = -topGridExtraHeight;
+  int endY   = h + topGridExtraHeight;
+  
+  for (int y = startY; y < endY; y += triangleHeight) {
+    for (int x = startX; x < endX; x += side) {
+      // Original grid point
+      float origX = x;
+      float origY = y;
+      
+      // Compute the relative coordinates from the pivot (center of rotation)
+      float dx = origX - baseX;
+      float dy = origY - baseY;
+      
+      // Rotate the point around the pivot
+      float rotX = dx * cos(rotationRad) - dy * sin(rotationRad);
+      float rotY = dx * sin(rotationRad) + dy * cos(rotationRad);
+      
+      // Translate back to the pivot and then apply horizontal oscillation
+      int finalX = baseX + rotX + oscOffset;
+      int finalY = baseY + rotY;
+      
+      drawCenteredTriangle(canvas, finalX, finalY, side, color);
+    }
+  }
+}
+
+void setup() {
+  Serial.begin(115200);
+  if (!arcada.arcadaBegin()){
+    while (1);
+  }
+  arcada.displayBegin();
+  arcada.setBacklight(255);
+  if (!arcada.createFrameBuffer(ARCADA_TFT_WIDTH, ARCADA_TFT_HEIGHT)){
+    while (1);
+  }
+}
+
+void loop() {
+  GFXcanvas16 *canvas = arcada.getCanvas();
+  canvas->fillScreen(COLOR_WHITE);
+  
+  // Draw the static bottom grid.
+  drawStaticTriangleGrid(canvas, 0, 0, triangleSide, COLOR_BLACK);
+  
+  // Calculate horizontal oscillation offset using a sine wave.
+  int topOscOffset = (int)(topOscAmplitude * sin(topOscPhase * PI / 180.0));
+  
+  // Draw the top grid with rotation about its center and horizontal oscillation.
+  drawTopTriangleGrid(canvas, topGridBaseX, topGridBaseY, triangleSide, topRotation, topOscOffset, COLOR_BLACK);
+  
+  // Update oscillation phase and rotation angle.
+  topOscPhase += topOscSpeed;
+  if (topOscPhase >= 360.0) topOscPhase -= 360.0;
+  
+  topRotation += topRotationSpeed;
+  if (topRotation >= 360.0) topRotation -= 360.0;
+  
+  arcada.blitFrameBuffer(0, 0, false, true);
+  delay(30);
+}
