@@ -1,6 +1,8 @@
-This is as close as I can get to creating a Moiré pattern.
+There are two files here you can play with...
+one uses lines and circles that are offest and top layer rotates.
+the other uses a bottom layer grid of triangles and the top layer is the same grid but rotates and undulates left to right and back.
 This is for the Adafruit Clue, so if you don't have one, you will have to make those changes yourself.
-I've made this as customizable as I could. There are two layers; layer 1 is the base "grid" and those parameters are customizable and Layer 2 as well.
+I've made them as customizable as I could. There are two layers; layer 1 is the base "grid" and those parameters are customizable and Layer 2 as well.
 Here are the main things you can change:
 Color Definitions -----
 Parameters for the Polar Dot Grid (Bottom Layer) -----
