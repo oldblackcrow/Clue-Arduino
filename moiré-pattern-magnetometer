@@ -1,0 +1,174 @@
+#include <Arduino.h>
+#include <Adafruit_Arcada.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_LIS3MDL.h>
+#include <Adafruit_Sensor.h>
+#include <math.h>
+
+Adafruit_Arcada arcada;
+Adafruit_LIS3MDL mag = Adafruit_LIS3MDL();
+
+// ----- Parameters for the Radial Lines (Moiré Pattern) -----
+const int NUM_RADIAL_LINES = 80;          // Total number of radial lines
+const int RADIAL_LINE_CENTER_THICKNESS = 1; // Center thickness
+const int RADIAL_LINE_EDGE_THICKNESS = 10;   // Edge thickness
+const int RADIAL_LINE_STEP = 24;             // Segment length for drawing
+
+// ----- Color Definitions -----
+#define COLOR_WHITE 0xFFFF
+#define COLOR_BLACK 0x0000
+
+// ----- Global Transformation Variables for the Top Layer -----
+float topGridRotation = 0.0;  // Relative rotation (degrees)
+float topGridScale = 1.0;     // Relative scale (1.0 = same as bottom layer)
+
+// ----- Baseline Sensor Values -----
+float baselineX, baselineY, baselineZ, baselineHeading;
+bool calibrated = false;
+
+// ----- Sensitivity Factors -----
+const float OFFSET_FACTOR = 5.0;   // Pixels per unit of x/y difference
+const float SCALE_FACTOR = 50.0;   // Sensor units per 1.0 change in scale
+const int OFFSET_LIMIT = 40;       // Maximum offset in pixels for x and y
+
+// ----- Global Precomputed Constants -----
+static int globalWidth, globalHeight;
+static int globalCx, globalCy;
+static int globalMaxR;
+static float globalAngleStep;
+const float DEG2RAD = PI / 180.0;
+
+// ----- Lookup Tables for Sine and Cosine (0 to 359°) -----
+static float sinLUT[360];
+static float cosLUT[360];
+
+// ----- Inline Helper: Draw a thick line by drawing several parallel offset lines.
+static inline void drawThickLine(GFXcanvas16 *canvas, int x0, int y0, int x1, int y1, uint16_t color, int thickness) {
+  float dx = x1 - x0, dy = y1 - y0;
+  float dist = sqrt(dx * dx + dy * dy);
+  if(dist == 0) dist = 1;
+  int half = thickness / 2;
+  for (int i = -half; i <= half; i++) {
+    int offsetX = round(i * (-dy) / dist);
+    int offsetY = round(i * (dx) / dist);
+    canvas->drawLine(x0 + offsetX, y0 + offsetY, x1 + offsetX, y1 + offsetY, color);
+  }
+}
+
+// ----- Inline Helper: Draw a gradient radial line with scaling using LUT.
+static inline void drawGradientRadialLineWithColorScaled(GFXcanvas16 *canvas, int cx, int cy, float angleRad, int maxR, 
+                                           int centerThickness, int edgeThickness, int step, 
+                                           float scale, uint16_t color) {
+  int angleDeg = ((int)round(angleRad * 180.0 / PI)) % 360;
+  if (angleDeg < 0) angleDeg += 360;
+  float c = cosLUT[angleDeg];
+  float s = sinLUT[angleDeg];
+  for (int r = 0; r < maxR; r += step) {
+    float t = (float)r / maxR;
+    int currentThickness = centerThickness + (int)((edgeThickness - centerThickness) * t);
+    int x0 = cx + (int)(r * scale * c);
+    int y0 = cy + (int)(r * scale * s);
+    int x1 = cx + (int)((r + step) * scale * c);
+    int y1 = cy + (int)((r + step) * scale * s);
+    drawThickLine(canvas, x0, y0, x1, y1, color, currentThickness);
+  }
+}
+
+// ----- Inline Helper: Draw the Bottom (Static) Radial Lines Pattern (black).
+static inline void drawBottomRadialLinesPattern(GFXcanvas16 *canvas) {
+  for (int i = 0; i < NUM_RADIAL_LINES; i++) {
+    float angleDeg = i * globalAngleStep;
+    float angleRad = angleDeg * DEG2RAD;
+    drawGradientRadialLineWithColorScaled(canvas, globalCx, globalCy, angleRad, globalMaxR, 
+        RADIAL_LINE_CENTER_THICKNESS, RADIAL_LINE_EDGE_THICKNESS, RADIAL_LINE_STEP, 1.0, COLOR_BLACK);
+  }
+  canvas->fillCircle(globalCx, globalCy, 3, COLOR_BLACK);
+}
+
+// ----- Inline Helper: Draw the Top (Transformed) Radial Lines Pattern (black).
+static inline void drawTopRadialLinesPattern(GFXcanvas16 *canvas, float scale, int offsetX, int offsetY) {
+  int topCx = globalCx + offsetX;
+  int topCy = globalCy + offsetY;
+  for (int i = 0; i < NUM_RADIAL_LINES; i++) {
+    float angleDeg = i * globalAngleStep;
+    angleDeg += topGridRotation;
+    float angleRad = angleDeg * DEG2RAD;
+    drawGradientRadialLineWithColorScaled(canvas, topCx, topCy, angleRad, globalMaxR, 
+        RADIAL_LINE_CENTER_THICKNESS, RADIAL_LINE_EDGE_THICKNESS, RADIAL_LINE_STEP, scale, COLOR_BLACK);
+  }
+  canvas->fillCircle(topCx, topCy, 3, COLOR_BLACK);
+}
+
+void setup() {
+  Serial.begin(115200);
+  unsigned long startTime = millis();
+  while (!Serial && millis() - startTime < 5000) { delay(10); }
+  
+  if (!arcada.arcadaBegin()){
+    while (1);
+  }
+  arcada.displayBegin();
+  arcada.setBacklight(255);
+  if (!arcada.createFrameBuffer(ARCADA_TFT_WIDTH, ARCADA_TFT_HEIGHT)){
+    while (1);
+  }
+  
+  if (!mag.begin_I2C()){
+    while (1);
+  }
+  
+  globalWidth = arcada.getCanvas()->width();
+  globalHeight = arcada.getCanvas()->height();
+  globalCx = globalWidth / 2;
+  globalCy = globalHeight / 2;
+  globalMaxR = sqrt(globalWidth * globalWidth + globalHeight * globalHeight);
+  globalAngleStep = 360.0 / NUM_RADIAL_LINES;
+  
+  for (int i = 0; i < 360; i++){
+    float rad = i * DEG2RAD;
+    sinLUT[i] = sin(rad);
+    cosLUT[i] = cos(rad);
+  }
+}
+
+void loop() {
+  sensors_event_t event;
+  mag.getEvent(&event);
+  
+  float heading = atan2(event.magnetic.y, event.magnetic.x) * 180.0 / PI;
+  if (heading < 0) heading += 360.0;
+  
+  if (!calibrated) {
+    baselineX = event.magnetic.x;
+    baselineY = event.magnetic.y;
+    baselineZ = event.magnetic.z;
+    baselineHeading = heading;
+    calibrated = true;
+  }
+  
+  float deltaX = event.magnetic.x - baselineX;
+  float deltaY = event.magnetic.y - baselineY;
+  float deltaZ = event.magnetic.z - baselineZ;
+  float deltaHeading = heading - baselineHeading;
+  
+  topGridRotation = deltaHeading;
+  topGridScale = 1.0 + (deltaZ / SCALE_FACTOR);
+  if (topGridScale < 0.8) topGridScale = 0.8;
+  if (topGridScale > 1.2) topGridScale = 1.2;
+  
+  int dynamicOffsetX = (int)(deltaX * OFFSET_FACTOR);
+  int dynamicOffsetY = (int)(deltaY * OFFSET_FACTOR);
+  if (dynamicOffsetX > OFFSET_LIMIT) dynamicOffsetX = OFFSET_LIMIT;
+  if (dynamicOffsetX < -OFFSET_LIMIT) dynamicOffsetX = -OFFSET_LIMIT;
+  if (dynamicOffsetY > OFFSET_LIMIT) dynamicOffsetY = OFFSET_LIMIT;
+  if (dynamicOffsetY < -OFFSET_LIMIT) dynamicOffsetY = -OFFSET_LIMIT;
+  
+  GFXcanvas16 *canvas = arcada.getCanvas();
+  canvas->fillScreen(COLOR_WHITE);
+  
+  drawBottomRadialLinesPattern(canvas);
+  drawTopRadialLinesPattern(canvas, topGridScale, dynamicOffsetX, dynamicOffsetY);
+  
+  arcada.blitFrameBuffer(0, 0, false, true);
+  delay(30);
+}
