@@ -1,4 +1,4 @@
-Version 1 moiré-pattern.ino: This uses lines and circles that are offest and top layer rotates. Not exactly the moiré pattern I was looking for, but it's interesting.
+Version 1 moiré-pattern: This uses lines and circles that are offest and top layer rotates. Not exactly the moiré pattern I was looking for, but it's interesting.
 
 Version 2 moiré-pattern-triangles: This uses a bottom layer grid of triangles and the top layer is the same grid but rotates and undulates left to right and back. A bit cooler and slightly closer to what I was looking for but still not quite there.
 
