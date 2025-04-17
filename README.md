@@ -1,15 +1,11 @@
-There are three files here you can play with...
-one uses lines and circles that are offest and top layer rotates.
-the second uses a bottom layer grid of triangles and the top layer is the same grid but rotates and undulates left to right and back.
-The third is an actual moiré pattern (star trek style) that is affected by the magnetometer. This is a fun and cool looking sketch!
-This is for the Adafruit Clue, so if you don't have one, you will have to make those changes yourself.
-I've made them as customizable as I could. There are two layers; layer 1 is the base "grid" and those parameters are customizable and Layer 2 as well.
-Here are the main things you can change:
-Color Definitions -----
-Parameters for the Polar Dot Grid (Bottom Layer) -----
-Bottom Grid Offset -----
-Top Grid Control Parameters (for the polar grid) -----
-Bottom Grid Rotation Parameter ---- The bottom grid will rotate in the opposite direction.
-Parameters for Radial Lines Background -----
+Version 1 moiré-pattern.ino: This uses lines and circles that are offest and top layer rotates. Not exactly the moiré pattern I was looking for, but it's interesting.
 
-Feel free to do your thing and Fork it! Enjoy!
+Version 2 moiré-pattern-triangles: This uses a bottom layer grid of triangles and the top layer is the same grid but rotates and undulates left to right and back. A bit cooler and slightly closer to what I was looking for but still not quite there.
+
+Version 3 moiré-pattern-magnetometer: The actual Star Trek style moiré pattern that is affected by the magnetometer. This is a fun and cool looking sketch!
+
+HARDWARE:
+Adafruit Clue. If you don't have one, you will have to make changes to the display and magnetometer sensor yourself.
+I've made them as customizable as I could. There are two layers; layer 1 (bottom) is the base "grid" and those parameters are customizable. Layer 2 (top) is also customizable but this is affected by the magnetometer. As you move around, the center point of Layer 2 moves in relation to the earth's magnetic field OR as a magnet comes close to the sensor.
+
+Feel free to Fork the F*ck out of it! Enjoy!
